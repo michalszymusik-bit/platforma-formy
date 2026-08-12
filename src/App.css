@@ -1,20 +1,455 @@
-import React from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-import Login from './components/Login';
-import Dashboard from './components/Dashboard';
-
-function App() {
-  const isAuthenticated = localStorage.getItem('isLoggedIn') === 'true';
-
-  return (
-    <Router>
-      <Routes>
-        <Route path="/login" element={<Login />} />
-        <Route path="/dashboard/*" element={isAuthenticated ? <Dashboard /> : <Navigate to="/login" />} />
-        <Route path="/" element={<Navigate to={isAuthenticated ? "/dashboard" : "/login"} />} />
-      </Routes>
-    </Router>
-  );
+/* Reset i podstawy */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
 }
 
-export default App;
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+  background: #f0f2f5;
+  color: #1a1a2e;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.app-container {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  max-width: 600px;
+  margin: 0 auto;
+  padding: 0 16px 80px 16px;
+}
+
+/* Header */
+.app-header {
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+  color: white;
+  padding: 24px 20px;
+  border-radius: 0 0 24px 24px;
+  margin: 0 -16px 24px -16px;
+  text-align: center;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+}
+
+.app-header h1 {
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: -0.5px;
+}
+
+.header-subtitle {
+  font-size: 14px;
+  opacity: 0.8;
+  margin-top: 4px;
+  font-weight: 300;
+}
+
+/* Karty */
+.form-card {
+  background: white;
+  border-radius: 16px;
+  padding: 20px;
+  margin-bottom: 20px;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+}
+
+.form-card h2 {
+  font-size: 18px;
+  margin-bottom: 16px;
+  color: #1a1a2e;
+}
+
+/* Formularz */
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.input-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.input-group label {
+  font-size: 14px;
+  font-weight: 600;
+  color: #333;
+}
+
+.input-group input,
+.input-group textarea,
+.input-group select {
+  padding: 12px 14px;
+  border: 2px solid #e0e0e0;
+  border-radius: 10px;
+  font-size: 16px;
+  transition: border-color 0.2s;
+  background: #fafafa;
+  width: 100%;
+}
+
+.input-group input:focus,
+.input-group textarea:focus,
+.input-group select:focus {
+  outline: none;
+  border-color: #1a1a2e;
+  background: white;
+}
+
+.input-group textarea {
+  resize: vertical;
+  min-height: 80px;
+}
+
+/* Przyciski */
+.form-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.btn {
+  padding: 12px 20px;
+  border: none;
+  border-radius: 10px;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  flex: 1;
+  text-align: center;
+}
+
+.btn:active {
+  transform: scale(0.97);
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+  color: white;
+}
+
+.btn-primary:active {
+  opacity: 0.8;
+}
+
+.btn-secondary {
+  background: #e0e0e0;
+  color: #333;
+}
+
+.btn-secondary:active {
+  background: #ccc;
+}
+
+.btn-danger {
+  background: #dc3545;
+  color: white;
+}
+
+.btn-danger:active {
+  opacity: 0.8;
+}
+
+.btn-sm {
+  padding: 6px 12px;
+  font-size: 13px;
+  flex: 0;
+}
+
+.btn-edit {
+  background: #ffc107;
+  color: #333;
+  padding: 6px 10px;
+  border-radius: 8px;
+  font-size: 16px;
+}
+
+.btn-status {
+  background: #17a2b8;
+  color: white;
+  padding: 6px 10px;
+  border-radius: 8px;
+  font-size: 16px;
+}
+
+.btn-delete {
+  background: #dc3545;
+  color: white;
+  padding: 6px 10px;
+  border-radius: 8px;
+  font-size: 16px;
+}
+
+/* Toolbar */
+.toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.search-box {
+  display: flex;
+  align-items: center;
+  background: white;
+  border-radius: 12px;
+  padding: 4px 14px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+
+.search-icon {
+  font-size: 18px;
+  opacity: 0.5;
+  margin-right: 8px;
+}
+
+.search-input {
+  border: none;
+  padding: 12px 0;
+  font-size: 16px;
+  flex: 1;
+  background: transparent;
+}
+
+.search-input:focus {
+  outline: none;
+}
+
+.toolbar-stats {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.badge {
+  background: #e9ecef;
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #495057;
+}
+
+/* Lista form */
+.forms-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.form-item {
+  background: white;
+  border-radius: 16px;
+  padding: 16px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+  transition: transform 0.2s;
+}
+
+.form-item:active {
+  transform: scale(0.99);
+}
+
+.form-item-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.form-item-title {
+  font-size: 17px;
+  font-weight: 600;
+  color: #1a1a2e;
+  word-break: break-word;
+  flex: 1;
+}
+
+.status-badge {
+  font-size: 12px;
+  padding: 3px 10px;
+  border-radius: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.status-badge.active {
+  background: #d4edda;
+  color: #155724;
+}
+
+.status-badge.inactive {
+  background: #f8d7da;
+  color: #721c24;
+}
+
+.form-item-description {
+  font-size: 14px;
+  color: #666;
+  margin: 4px 0 10px 0;
+  line-height: 1.4;
+}
+
+.form-item-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.form-item-date {
+  font-size: 12px;
+  color: #999;
+}
+
+.form-item-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.form-item-actions .btn {
+  padding: 6px 10px;
+  border-radius: 8px;
+  font-size: 16px;
+  line-height: 1;
+  min-width: 36px;
+}
+
+/* Pusty stan */
+.empty-state {
+  text-align: center;
+  padding: 48px 20px;
+  background: white;
+  border-radius: 16px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+
+.empty-icon {
+  font-size: 48px;
+  display: block;
+  margin-bottom: 12px;
+}
+
+.empty-state p {
+  font-size: 18px;
+  color: #495057;
+}
+
+.empty-subtext {
+  font-size: 14px !important;
+  color: #999 !important;
+  margin-top: 4px;
+}
+
+/* Footer */
+.app-footer {
+  text-align: center;
+  padding: 16px 0;
+  font-size: 12px;
+  color: #999;
+  margin-top: auto;
+}
+
+/* Responsywność - jeszcze lepsza na małych ekranach */
+@media (max-width: 480px) {
+  .app-container {
+    padding: 0 12px 70px 12px;
+  }
+  
+  .app-header {
+    padding: 20px 16px;
+    margin: 0 -12px 20px -12px;
+  }
+  
+  .app-header h1 {
+    font-size: 20px;
+  }
+  
+  .form-card {
+    padding: 16px;
+  }
+  
+  .form-item {
+    padding: 14px;
+  }
+  
+  .form-item-title {
+    font-size: 15px;
+  }
+  
+  .btn {
+    font-size: 14px;
+    padding: 10px 14px;
+  }
+}
+
+/* Dla bardzo małych ekranów (np. starsze telefony) */
+@media (max-width: 360px) {
+  .form-item-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+  }
+  
+  .form-item-footer {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  
+  .form-item-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+}
+
+/* Dla tabletów i większych ekranów */
+@media (min-width: 768px) {
+  .app-container {
+    max-width: 700px;
+    padding: 0 24px 80px 24px;
+  }
+  
+  .app-header {
+    padding: 32px 24px;
+    margin: 0 -24px 32px -24px;
+    border-radius: 0 0 32px 32px;
+  }
+  
+  .toolbar {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+  }
+  
+  .search-box {
+    flex: 1;
+    max-width: 400px;
+  }
+  
+  .toolbar-stats {
+    gap: 12px;
+  }
+}
+
+/* Dla desktopów */
+@media (min-width: 1024px) {
+  .app-container {
+    max-width: 800px;
+  }
+  
+  .form-item:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 16px rgba(0,0,0,0.1);
+  }
+  
+  .btn:hover {
+    opacity: 0.85;
+  }
+}
