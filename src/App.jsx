@@ -23,42 +23,50 @@ const loadFormsFromLocalStorage = () => {
 };
 
 function App() {
-  // Stan główny - wczytuje dane z localStorage przy starcie
   const [forms, setForms] = useState(() => loadFormsFromLocalStorage());
-  
-  // Stan dla formularza dodawania
   const [newForm, setNewForm] = useState({
     name: '',
     description: '',
     status: 'active'
   });
+  const [editingId, setEditingId] = useState(null);
+  const [searchTerm, setSearchTerm] = useState('');
 
-  // Zapisz dane za każdym razem, gdy się zmienią
   useEffect(() => {
     saveFormsToLocalStorage(forms);
   }, [forms]);
 
-  // Funkcja do dodawania nowej formy
   const addForm = (e) => {
     e.preventDefault();
     if (!newForm.name.trim()) return;
     
-    const formToAdd = {
-      id: Date.now(),
-      ...newForm,
-      createdAt: new Date().toISOString()
-    };
+    if (editingId) {
+      // Edycja
+      setForms(forms.map(form => 
+        form.id === editingId 
+          ? { ...form, ...newForm }
+          : form
+      ));
+      setEditingId(null);
+    } else {
+      // Dodawanie
+      const formToAdd = {
+        id: Date.now(),
+        ...newForm,
+        createdAt: new Date().toISOString()
+      };
+      setForms([...forms, formToAdd]);
+    }
     
-    setForms([...forms, formToAdd]);
     setNewForm({ name: '', description: '', status: 'active' });
   };
 
-  // Funkcja do usuwania formy
   const deleteForm = (id) => {
-    setForms(forms.filter(form => form.id !== id));
+    if (window.confirm('Czy na pewno chcesz usunąć tę formę?')) {
+      setForms(forms.filter(form => form.id !== id));
+    }
   };
 
-  // Funkcja do zmiany statusu
   const toggleStatus = (id) => {
     setForms(forms.map(form => 
       form.id === id 
@@ -67,130 +75,162 @@ function App() {
     ));
   };
 
+  const startEdit = (form) => {
+    setEditingId(form.id);
+    setNewForm({
+      name: form.name,
+      description: form.description || '',
+      status: form.status
+    });
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const cancelEdit = () => {
+    setEditingId(null);
+    setNewForm({ name: '', description: '', status: 'active' });
+  };
+
+  const clearAllData = () => {
+    if (window.confirm('Czy na pewno chcesz usunąć WSZYSTKIE dane?')) {
+      setForms([]);
+      localStorage.removeItem('platformaFormy');
+    }
+  };
+
+  // Filtrowanie form
+  const filteredForms = forms.filter(form => 
+    form.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (form.description && form.description.toLowerCase().includes(searchTerm.toLowerCase()))
+  );
+
   return (
-    <div className="min-h-screen bg-gray-100 p-8">
-      <div className="max-w-4xl mx-auto">
-        <h1 className="text-3xl font-bold mb-8 text-gray-800">
-          Platforma do zarządzania formami odlewczymi
-        </h1>
-        
-        {/* Formularz dodawania */}
-        <div className="bg-white rounded-lg shadow p-6 mb-8">
-          <h2 className="text-xl font-semibold mb-4">Dodaj nową formę</h2>
-          <form onSubmit={addForm} className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Nazwa formy
-              </label>
+    <div className="app-container">
+      <header className="app-header">
+        <h1>📋 Platforma Form</h1>
+        <p className="header-subtitle">Zarządzaj swoimi formami odlewczymi</p>
+      </header>
+
+      <main className="app-main">
+        {/* Formularz dodawania/edycji */}
+        <div className="form-card">
+          <h2>{editingId ? '✏️ Edytuj formę' : '➕ Dodaj nową formę'}</h2>
+          <form onSubmit={addForm} className="form-group">
+            <div className="input-group">
+              <label>Nazwa formy *</label>
               <input
                 type="text"
                 value={newForm.name}
                 onChange={(e) => setNewForm({ ...newForm, name: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 placeholder="Wprowadź nazwę formy"
                 required
               />
             </div>
             
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Opis
-              </label>
+            <div className="input-group">
+              <label>Opis</label>
               <textarea
                 value={newForm.description}
                 onChange={(e) => setNewForm({ ...newForm, description: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 placeholder="Krótki opis formy"
                 rows="3"
               />
             </div>
             
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Status
-              </label>
+            <div className="input-group">
+              <label>Status</label>
               <select
                 value={newForm.status}
                 onChange={(e) => setNewForm({ ...newForm, status: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
-                <option value="active">Aktywna</option>
-                <option value="inactive">Nieaktywna</option>
+                <option value="active">✅ Aktywna</option>
+                <option value="inactive">⛔ Nieaktywna</option>
               </select>
             </div>
             
-            <button
-              type="submit"
-              className="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 transition-colors"
-            >
-              Dodaj formę
-            </button>
+            <div className="form-actions">
+              <button type="submit" className="btn btn-primary">
+                {editingId ? '💾 Zapisz zmiany' : '➕ Dodaj formę'}
+              </button>
+              {editingId && (
+                <button type="button" className="btn btn-secondary" onClick={cancelEdit}>
+                  ❌ Anuluj
+                </button>
+              )}
+            </div>
           </form>
         </div>
 
+        {/* Wyszukiwarka i licznik */}
+        <div className="toolbar">
+          <div className="search-box">
+            <span className="search-icon">🔍</span>
+            <input
+              type="text"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder="Szukaj form..."
+              className="search-input"
+            />
+          </div>
+          <div className="toolbar-stats">
+            <span className="badge">{filteredForms.length} / {forms.length} form</span>
+            {forms.length > 0 && (
+              <button className="btn btn-danger btn-sm" onClick={clearAllData}>
+                🗑️ Wyczyść wszystko
+              </button>
+            )}
+          </div>
+        </div>
+
         {/* Lista form */}
-        <div className="bg-white rounded-lg shadow p-6">
-          <h2 className="text-xl font-semibold mb-4">
-            Lista form ({forms.length})
-          </h2>
-          
-          {forms.length === 0 ? (
-            <p className="text-gray-500 text-center py-8">
-              Brak dodanych form. Dodaj pierwszą formę!
-            </p>
+        <div className="forms-list">
+          {filteredForms.length === 0 ? (
+            <div className="empty-state">
+              <span className="empty-icon">📭</span>
+              <p>{searchTerm ? 'Nie znaleziono form' : 'Brak dodanych form'}</p>
+              <p className="empty-subtext">
+                {searchTerm ? 'Spróbuj zmienić kryteria wyszukiwania' : 'Dodaj pierwszą formę!'}
+              </p>
+            </div>
           ) : (
-            <div className="space-y-4">
-              {forms.map((form) => (
-                <div
-                  key={form.id}
-                  className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow"
-                >
-                  <div className="flex justify-between items-start">
-                    <div className="flex-1">
-                      <h3 className="text-lg font-semibold text-gray-800">
-                        {form.name}
-                      </h3>
-                      {form.description && (
-                        <p className="text-gray-600 mt-1">{form.description}</p>
-                      )}
-                      <div className="flex items-center gap-4 mt-2">
-                        <span className={`px-2 py-1 text-xs rounded-full ${
-                          form.status === 'active' 
-                            ? 'bg-green-100 text-green-800' 
-                            : 'bg-gray-100 text-gray-800'
-                        }`}>
-                          {form.status === 'active' ? 'Aktywna' : 'Nieaktywna'}
-                        </span>
-                        <span className="text-xs text-gray-400">
-                          Dodano: {new Date(form.createdAt).toLocaleDateString()}
-                        </span>
-                      </div>
-                    </div>
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => toggleStatus(form.id)}
-                        className={`px-3 py-1 text-sm rounded ${
-                          form.status === 'active'
-                            ? 'bg-yellow-100 text-yellow-800 hover:bg-yellow-200'
-                            : 'bg-green-100 text-green-800 hover:bg-green-200'
-                        }`}
-                      >
-                        {form.status === 'active' ? 'Dezaktywuj' : 'Aktywuj'}
-                      </button>
-                      <button
-                        onClick={() => deleteForm(form.id)}
-                        className="px-3 py-1 text-sm bg-red-100 text-red-800 rounded hover:bg-red-200"
-                      >
-                        Usuń
-                      </button>
-                    </div>
+            filteredForms.map((form) => (
+              <div key={form.id} className="form-item">
+                <div className="form-item-header">
+                  <h3 className="form-item-title">{form.name}</h3>
+                  <span className={`status-badge ${form.status}`}>
+                    {form.status === 'active' ? '✅ Aktywna' : '⛔ Nieaktywna'}
+                  </span>
+                </div>
+                
+                {form.description && (
+                  <p className="form-item-description">{form.description}</p>
+                )}
+                
+                <div className="form-item-footer">
+                  <span className="form-item-date">
+                    📅 {new Date(form.createdAt).toLocaleDateString('pl-PL')}
+                  </span>
+                  <div className="form-item-actions">
+                    <button className="btn btn-edit" onClick={() => startEdit(form)}>
+                      ✏️
+                    </button>
+                    <button className="btn btn-status" onClick={() => toggleStatus(form.id)}>
+                      {form.status === 'active' ? '⏸️' : '▶️'}
+                    </button>
+                    <button className="btn btn-delete" onClick={() => deleteForm(form.id)}>
+                      🗑️
+                    </button>
                   </div>
                 </div>
-              ))}
-            </div>
+              </div>
+            ))
           )}
         </div>
-      </div>
+      </main>
+
+      <footer className="app-footer">
+        <p>© 2026 Platforma Form | Dane zapisywane w localStorage</p>
+      </footer>
     </div>
   );
 }
