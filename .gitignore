@@ -24,3 +24,16 @@ dist-ssr
 *.sw?
 
 .vercel
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.env.local
+
+# Backend
+backend/node_modules/
+backend/.env
+backend/.env.local
+
+# System
+.DS_Store
+*.log
