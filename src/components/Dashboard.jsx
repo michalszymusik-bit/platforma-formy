@@ -11,6 +11,7 @@ import {
 } from 'react-icons/fa';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, PieChart, Pie, Legend } from 'recharts';
 import { useNavigate } from 'react-router-dom';
+import { supabase } from '../supabase';
 import { defaultUsers, getVisibleTabs, ROLES, PERMISSIONS, ensureServicePermission } from '../data/users';
 import UsersPanel from './UsersPanel';
 import ServicePanel from './ServicePanel';
@@ -97,7 +98,7 @@ const loadFromStorage = (key, defaultValue) => {
 export default function Dashboard() {
   const navigate = useNavigate();
   
-  const [forms, setForms] = useState(() => loadFromStorage(STORAGE_KEYS.FORMS, defaultForms));
+  const [forms, setForms] = useState([]);
   const [history, setHistory] = useState(() => loadFromStorage(STORAGE_KEYS.HISTORY, defaultHistory));
   const [tasks, setTasks] = useState(() => loadFromStorage(STORAGE_KEYS.TASKS, []));
   
@@ -117,6 +118,40 @@ export default function Dashboard() {
   const [report, setReport] = useState(emptyReport());
   const [toast, setToast] = useState(null);
   const [loading, setLoading] = useState(false);
+  useEffect(() => {
+  loadFormsFromSupabase();
+}, []);
+
+const loadFormsFromSupabase = async () => {
+  try {
+    setLoading(true);
+
+    const { data, error } = await supabase
+      .from('forms')
+      .select('*')
+      .order('id', { ascending: false });
+
+    if (error) {
+      console.error('Błąd pobierania form:', error);
+      notify(`❌ Błąd bazy danych: ${error.message}`, 'error');
+      return;
+    }
+
+    const normalizedForms = (data || []).map(form => ({
+      ...form,
+      cycles: Number(form.cycles) || 0,
+      cyclesLimit: Number(form.cyclesLimit) || 5000
+    }));
+
+    setForms(normalizedForms);
+
+  } catch (error) {
+    console.error(error);
+    notify('❌ Nie udało się połączyć z bazą danych', 'error');
+  } finally {
+    setLoading(false);
+  }
+};
 
   // ⭐ Pobieramy dane użytkownika z localStorage
   const username = localStorage.getItem('username') || 'Administrator';
@@ -137,9 +172,6 @@ export default function Dashboard() {
   // ZAPISYWANIE DANYCH
   // ============================================
 
-  useEffect(() => {
-    saveToStorage(STORAGE_KEYS.FORMS, forms);
-  }, [forms]);
 
   useEffect(() => {
     saveToStorage(STORAGE_KEYS.HISTORY, history);
@@ -212,50 +244,145 @@ export default function Dashboard() {
   const openNew = () => { setEditingId(null); setNewForm(emptyForm()); setModal('form'); };
   const openEdit = (form) => { setEditingId(form.id); setNewForm({ ...form }); setModal('form'); };
 
-  const saveForm = (e) => {
-    e.preventDefault();
-    if (!newForm.name.trim()) { notify('Nazwa formy jest wymagana', 'error'); return; }
-    setLoading(true);
-    setTimeout(() => {
-      const last = newForm.lastMaintenance || new Date().toISOString().split('T')[0];
-      const next = new Date(last);
-      next.setMonth(next.getMonth() + 3);
-      if (editingId) {
-        setForms(prev => prev.map(f => f.id === editingId ? {
-          ...f, ...newForm,
-          name: newForm.name.trim().toUpperCase(),
-          cycles: Number(newForm.cycles) || 0,
-          cyclesLimit: Number(newForm.cyclesLimit) || 5000,
-          nextMaintenance: next.toISOString().split('T')[0]
-        } : f));
-        notify('✅ Forma zaktualizowana');
-      } else {
-        const item = {
-          ...newForm,
-          id: Date.now(),
-          name: newForm.name.trim().toUpperCase(),
-          cycles: Number(newForm.cycles) || 0,
-          cyclesLimit: Number(newForm.cyclesLimit) || 5000,
-          created: new Date().toISOString().split('T')[0],
-          nextMaintenance: next.toISOString().split('T')[0],
-          lastServiceDate: null
-        };
-        setForms(prev => [item, ...prev]);
-        notify(`✅ Dodano ${item.name}`);
-      }
-      setModal(null);
-      setLoading(false);
-    }, 400);
-  };
+  const saveForm = async (e) => {
+  e.preventDefault();
 
-  const removeForm = (id) => {
-    const f = forms.find(x => x.id === id);
-    if (!f || !window.confirm(`⚠️ Usunąć ${f.name}?`)) return;
+  if (!newForm.name.trim()) {
+    notify('Nazwa formy jest wymagana', 'error');
+    return;
+  }
+
+  setLoading(true);
+
+  try {
+    const last =
+      newForm.lastMaintenance ||
+      new Date().toISOString().split('T')[0];
+
+    const next = new Date(last);
+    next.setMonth(next.getMonth() + 3);
+
+    /*
+     * WAŻNE:
+     * wysyłamy tylko kolumny, które masz w Supabase.
+     *
+     * cyclesLimit i lastServiceDate nie są w Twojej
+     * tabeli, dlatego nie wysyłamy ich do bazy.
+     */
+    const formData = {
+      name: newForm.name.trim().toUpperCase(),
+      status: newForm.status || 'Dostępna',
+      material: newForm.material || '',
+      location: newForm.location || '',
+      cycles: Number(newForm.cycles) || 0,
+      lastMaintenance: last,
+      nextMaintenance: next.toISOString().split('T')[0],
+      machine: newForm.machine || '',
+      temperature: newForm.temperature || '',
+      pressure: newForm.pressure || '',
+      notes: newForm.notes || ''
+    };
+
+    if (editingId) {
+
+      const { data, error } = await supabase
+        .from('forms')
+        .update(formData)
+        .eq('id', editingId)
+        .select()
+        .single();
+
+      if (error) {
+        console.error('Błąd aktualizacji:', error);
+        notify(`❌ ${error.message}`, 'error');
+        return;
+      }
+
+      setForms(prev =>
+        prev.map(form =>
+          form.id === editingId
+            ? {
+                ...data,
+                cycles: Number(data.cycles) || 0,
+                cyclesLimit: Number(data.cyclesLimit) || 5000
+              }
+            : form
+        )
+      );
+
+      notify('✅ Forma zaktualizowana');
+
+    } else {
+
+      const { data, error } = await supabase
+        .from('forms')
+        .insert([formData])
+        .select()
+        .single();
+
+      if (error) {
+        console.error('Błąd dodawania:', error);
+        notify(`❌ ${error.message}`, 'error');
+        return;
+      }
+
+      const newItem = {
+        ...data,
+        cycles: Number(data.cycles) || 0,
+        cyclesLimit: Number(data.cyclesLimit) || 5000
+      };
+
+      setForms(prev => [newItem, ...prev]);
+
+      notify(`✅ Dodano ${newItem.name}`);
+    }
+
+    setModal(null);
+    setEditingId(null);
+    setNewForm(emptyForm());
+
+  } catch (error) {
+    console.error(error);
+    notify('❌ Wystąpił błąd podczas zapisu', 'error');
+  } finally {
+    setLoading(false);
+  }
+};
+  const removeForm = async (id) => {
+  const f = forms.find(x => x.id === id);
+
+  if (!f) return;
+
+  if (!window.confirm(`⚠️ Usunąć ${f.name}?`)) {
+    return;
+  }
+
+  setLoading(true);
+
+  try {
+    const { error } = await supabase
+      .from('forms')
+      .delete()
+      .eq('id', id);
+
+    if (error) {
+      console.error('Błąd usuwania:', error);
+      notify(`❌ ${error.message}`, 'error');
+      return;
+    }
+
     setForms(prev => prev.filter(x => x.id !== id));
     setModal(null);
-    notify(`🗑️ Usunięto ${f.name}`, 'warning');
-  };
 
+    notify(`🗑️ Usunięto ${f.name}`, 'warning');
+
+  } catch (error) {
+    console.error(error);
+    notify('❌ Nie udało się usunąć formy', 'error');
+  } finally {
+    setLoading(false);
+  }
+};
   // ============================================
   // RAPORT ZMIANOWY
   // ============================================
@@ -288,20 +415,37 @@ export default function Dashboard() {
         const newCycles = (form.cycles || 0) + (Number(report.produced) || 0);
         setForms(prev => prev.map(f => f.id === form.id ? {
           ...f,
-          status: newStatus,
-          cycles: newCycles,
-          notes: report.notes || f.notes
-        } : f));
-        notify(`✅ Raport dla ${form.name} zapisany - zaktualizowano status na ${newStatus}`, 'success');
-      } else {
-        notify('✅ Raport zapisany', 'success');
-      }
+          
+const updatedValues = {
+  status: newStatus,
+  cycles: newCycles,
+  notes: report.notes || form.notes
+};
 
-      setReport(emptyReport());
-      setLoading(false);
-    }, 400);
-  };
+const { data: updatedForm, error } = await supabase
+  .from('forms')
+  .update(updatedValues)
+  .eq('id', form.id)
+  .select()
+  .single();
 
+if (error) {
+  console.error('Błąd aktualizacji formy:', error);
+  notify(`❌ Raport zapisany, ale nie udało się zaktualizować formy: ${error.message}`, 'error');
+  return;
+}
+
+setForms(prev =>
+  prev.map(f =>
+    f.id === form.id
+      ? {
+          ...updatedForm,
+          cycles: Number(updatedForm.cycles) || 0,
+          cyclesLimit: Number(updatedForm.cyclesLimit) || 5000
+        }
+      : f
+  )
+);
   // ============================================
   // POMOCNICZE
   // ============================================
