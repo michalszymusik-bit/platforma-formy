@@ -11,7 +11,7 @@ import {
 } from 'react-icons/fa';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, PieChart, Pie, Legend } from 'recharts';
 import { useNavigate } from 'react-router-dom';
-import { supabase } from '../../supabase';
+import { supabase } from '../supabase';
 import { defaultUsers, getVisibleTabs, ROLES, PERMISSIONS, ensureServicePermission } from '../data/users';
 import UsersPanel from './UsersPanel';
 import ServicePanel from './ServicePanel';
