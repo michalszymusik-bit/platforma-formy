@@ -216,8 +216,28 @@ export default function Dashboard() {
   // ============================================
 
   useEffect(() => {
+  console.log('🔵 START TEST SUPABASE');
+
+  const testSupabase = async () => {
+    const { data, error } = await supabase
+      .from('forms')
+      .select('*');
+
+    console.log('🟢 SUPABASE DATA:', data);
+    console.log('🔴 SUPABASE ERROR:', error);
+
+    if (error) {
+      console.error('❌ SUPABASE NIE DZIAŁA:', error.message);
+    } else {
+      console.log('✅ SUPABASE DZIAŁA! Liczba form:', data.length);
+    }
+
+    // normalne ładowanie aplikacji
     loadFormsFromSupabase();
-  }, []);
+  };
+
+  testSupabase();
+}, []);
 
   // ============================================
   // ZAPISYWANIE DO localStorage (tylko dla użytkowników)
