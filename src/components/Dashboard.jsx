@@ -18,15 +18,12 @@ import ServicePanel from './ServicePanel';
 import ReportsPanel from './ReportsPanel';
 
 // ============================================
-// NAZWY TABEL - ZMIEŃ NA SWOJE!
+// NAZWA TABELI - SPRAWDŹ CZY TO TWOJA NAZWA!
 // ============================================
-const TABLES = {
-  FORMS: 'forms',      // ← PODAJ NAZWĘ TABELI Z FORMANI
-  HISTORY: 'history'   // ← PODAJ NAZWĘ TABELI Z HISTORIĄ
-};
+const TABLE_NAME = 'forms';  // ← ZMIEŃ NA SWOJĄ NAZWĘ JAK MASZ INNĄ!
 
 // ============================================
-// BAZA DANYCH - DANE POCZĄTKOWE (TYLKO GDY PUSTO)
+// DANE POCZĄTKOWE
 // ============================================
 
 const defaultForms = [
@@ -69,10 +66,12 @@ const emptyReport = () => ({
 });
 
 // ============================================
-// FUNKCJE ZAPISU I ODCZYTU Z localStorage (TYLKO DLA UŻYTKOWNIKÓW I ZADAŃ)
+// FUNKCJE ZAPISU I ODCZYTU Z localStorage
 // ============================================
 
 const STORAGE_KEYS = {
+  FORMS: 'forma_odlewcze_forms',
+  HISTORY: 'forma_odlewcze_history',
   USERS: 'forma_odlewcze_users',
   TASKS: 'forma_odlewcze_tasks'
 };
@@ -105,10 +104,9 @@ export default function Dashboard() {
   const navigate = useNavigate();
   
   const [forms, setForms] = useState([]);
-  const [history, setHistory] = useState([]);
+  const [history, setHistory] = useState(() => loadFromStorage(STORAGE_KEYS.HISTORY, defaultHistory));
   const [tasks, setTasks] = useState(() => loadFromStorage(STORAGE_KEYS.TASKS, []));
   
-  // ⭐ ŁADUJEMY UŻYTKOWNIKÓW
   const [users, setUsers] = useState(() => {
     const loadedUsers = loadFromStorage(STORAGE_KEYS.USERS, defaultUsers);
     return ensureServicePermission(loadedUsers);
@@ -131,32 +129,31 @@ export default function Dashboard() {
   const userRole = localStorage.getItem('userRole') || ROLES.ADMIN;
   const userRoleLabel = localStorage.getItem('userRoleLabel') || 'Administrator';
 
-  // ⭐ Pobierz aktualnego użytkownika z listy users
   const currentUser = users.find(u => u.username === username);
-  
-  // ⭐ Użyj funkcji getVisibleTabs z uwzględnieniem customPermissions
   const visibleTabs = getVisibleTabs(currentUser || { role: userRole, customPermissions: PERMISSIONS[userRole] });
-  
-  // ⭐ SPRAWDŹ CZY ADMIN
   const isAdmin = userRole === ROLES.ADMIN || currentUser?.role === ROLES.ADMIN;
 
   // ============================================
-  // FUNKCJE SUPABASE - FORMY
+  // ŁADOWANIE FORM Z SUPABASE
   // ============================================
 
   const loadFormsFromSupabase = async () => {
     try {
       setLoading(true);
+      console.log('🔄 Pobieranie form z Supabase...');
+      
       const { data, error } = await supabase
-        .from(TABLES.FORMS)
+        .from(TABLE_NAME)
         .select('*')
         .order('id', { ascending: false });
 
       if (error) {
-        console.error('Błąd pobierania form:', error);
+        console.error('❌ Błąd pobierania form:', error);
         notify(`❌ Błąd bazy danych: ${error.message}`, 'error');
         return;
       }
+
+      console.log('✅ Dane pobrane:', data);
 
       if (data && data.length > 0) {
         const normalizedForms = data.map(form => ({
@@ -165,20 +162,28 @@ export default function Dashboard() {
           cyclesLimit: Number(form.cyclesLimit) || 5000
         }));
         setForms(normalizedForms);
+        notify(`✅ Załadowano ${normalizedForms.length} form z bazy`, 'success');
       } else {
-        // Jeśli brak danych - wgraj domyślne
+        console.log('⚠️ Brak danych w bazie - wgrywam domyślne...');
         await seedDefaultForms();
       }
     } catch (error) {
-      console.error(error);
+      console.error('❌ Błąd:', error);
       notify('❌ Nie udało się połączyć z bazą danych', 'error');
     } finally {
       setLoading(false);
     }
   };
 
+  // ============================================
+  // WGRAJ DOMYŚLNE DANE DO SUPABASE
+  // ============================================
+
   const seedDefaultForms = async () => {
     try {
+      setLoading(true);
+      console.log('🔄 Wgrywanie domyślnych form do Supabase...');
+      
       const formsToInsert = defaultForms.map(f => ({
         name: f.name,
         status: f.status,
@@ -196,107 +201,49 @@ export default function Dashboard() {
       }));
 
       const { data, error } = await supabase
-        .from(TABLES.FORMS)
+        .from(TABLE_NAME)
         .insert(formsToInsert)
         .select();
 
       if (error) {
-        console.error('Błąd seedowania:', error);
+        console.error('❌ Błąd seedowania:', error);
+        notify(`❌ Błąd wgrywania danych: ${error.message}`, 'error');
         return;
       }
 
       if (data) {
+        console.log('✅ Wgrano domyślne dane:', data);
         const normalized = data.map(form => ({
           ...form,
           cycles: Number(form.cycles) || 0,
           cyclesLimit: Number(form.cyclesLimit) || 5000
         }));
         setForms(normalized);
-        notify('✅ Załadowano domyślne dane form', 'success');
+        notify(`✅ Wgrano ${normalized.length} domyślnych form do bazy`, 'success');
       }
     } catch (error) {
-      console.error('Błąd seedowania:', error);
+      console.error('❌ Błąd seedowania:', error);
+      notify('❌ Nie udało się wgrać danych', 'error');
+    } finally {
+      setLoading(false);
     }
   };
 
   // ============================================
-  // FUNKCJE SUPABASE - HISTORIA
-  // ============================================
-
-  const loadHistoryFromSupabase = async () => {
-    try {
-      const { data, error } = await supabase
-        .from(TABLES.HISTORY)
-        .select('*')
-        .order('date', { ascending: false });
-
-      if (error) {
-        console.error('Błąd pobierania historii:', error);
-        return;
-      }
-
-      if (data && data.length > 0) {
-        const normalizedHistory = data.map(h => ({
-          ...h,
-          formId: h.form_id || h.formId
-        }));
-        setHistory(normalizedHistory);
-      } else {
-        // Jeśli brak historii - wgraj domyślne
-        await seedDefaultHistory();
-      }
-    } catch (error) {
-      console.error('Błąd:', error);
-    }
-  };
-
-  const seedDefaultHistory = async () => {
-    try {
-      const historyToInsert = defaultHistory.map(h => ({
-        form_id: h.formId,
-        shift: h.shift,
-        operator: h.operator,
-        date: h.date,
-        produced: h.produced,
-        problems: h.problems,
-        status: h.status,
-        notes: h.notes
-      }));
-
-      const { data, error } = await supabase
-        .from(TABLES.HISTORY)
-        .insert(historyToInsert)
-        .select();
-
-      if (error) {
-        console.error('Błąd seedowania historii:', error);
-        return;
-      }
-
-      if (data) {
-        const normalized = data.map(h => ({
-          ...h,
-          formId: h.form_id
-        }));
-        setHistory(normalized);
-      }
-    } catch (error) {
-      console.error('Błąd seedowania historii:', error);
-    }
-  };
-
-  // ============================================
-  // ŁADOWANIE DANYCH PRZY STARCIE
+  // ŁADOWANIE PRZY STARCIE
   // ============================================
 
   useEffect(() => {
     loadFormsFromSupabase();
-    loadHistoryFromSupabase();
   }, []);
 
   // ============================================
-  // ZAPISYWANIE DANYCH DO localStorage (TYLKO UŻYTKOWNICY I ZADANIA)
+  // ZAPISYWANIE DO localStorage (tylko dla innych danych)
   // ============================================
+
+  useEffect(() => {
+    saveToStorage(STORAGE_KEYS.HISTORY, history);
+  }, [history]);
 
   useEffect(() => {
     saveToStorage(STORAGE_KEYS.USERS, users);
@@ -397,14 +344,14 @@ export default function Dashboard() {
 
       if (editingId) {
         const { data, error } = await supabase
-          .from(TABLES.FORMS)
+          .from(TABLE_NAME)
           .update(formData)
           .eq('id', editingId)
           .select()
           .single();
 
         if (error) {
-          console.error('Błąd aktualizacji:', error);
+          console.error('❌ Błąd aktualizacji:', error);
           notify(`❌ ${error.message}`, 'error');
           return;
         }
@@ -424,13 +371,13 @@ export default function Dashboard() {
         notify('✅ Forma zaktualizowana');
       } else {
         const { data, error } = await supabase
-          .from(TABLES.FORMS)
+          .from(TABLE_NAME)
           .insert([formData])
           .select()
           .single();
 
         if (error) {
-          console.error('Błąd dodawania:', error);
+          console.error('❌ Błąd dodawania:', error);
           notify(`❌ ${error.message}`, 'error');
           return;
         }
@@ -449,7 +396,7 @@ export default function Dashboard() {
       setEditingId(null);
       setNewForm(emptyForm());
     } catch (error) {
-      console.error(error);
+      console.error('❌ Błąd:', error);
       notify('❌ Wystąpił błąd podczas zapisu', 'error');
     } finally {
       setLoading(false);
@@ -468,12 +415,12 @@ export default function Dashboard() {
 
     try {
       const { error } = await supabase
-        .from(TABLES.FORMS)
+        .from(TABLE_NAME)
         .delete()
         .eq('id', id);
 
       if (error) {
-        console.error('Błąd usuwania:', error);
+        console.error('❌ Błąd usuwania:', error);
         notify(`❌ ${error.message}`, 'error');
         return;
       }
@@ -482,7 +429,7 @@ export default function Dashboard() {
       setModal(null);
       notify(`🗑️ Usunięto ${f.name}`, 'warning');
     } catch (error) {
-      console.error(error);
+      console.error('❌ Błąd:', error);
       notify('❌ Nie udało się usunąć formy', 'error');
     } finally {
       setLoading(false);
@@ -490,33 +437,21 @@ export default function Dashboard() {
   };
 
   // ============================================
-  // RAPORT ZMIANOWY (Z SUPABASE)
+  // RAPORT ZMIANOWY (ZAPIS DO LOCALSTORAGE - NA RAZIE)
   // ============================================
 
-  const saveReport = async (e) => {
+  const saveReport = (e) => {
     e.preventDefault();
-    
-    if (!report.formId) { 
-      notify('❌ Wybierz formę', 'error'); 
-      return; 
-    }
-    if (!report.operator.trim()) { 
-      notify('❌ Wpisz nazwisko operatora', 'error'); 
-      return; 
-    }
-    if (report.produced < 0) { 
-      notify('❌ Produkcja nie może być ujemna', 'error'); 
-      return; 
-    }
+    if (!report.formId) { notify('❌ Wybierz formę', 'error'); return; }
+    if (!report.operator.trim()) { notify('❌ Wpisz nazwisko operatora', 'error'); return; }
+    if (report.produced < 0) { notify('❌ Produkcja nie może być ujemna', 'error'); return; }
 
     setLoading(true);
-
-    try {
+    setTimeout(() => {
       const form = forms.find(f => f.id === Number(report.formId));
-      
-      // 1. ZAPISZ RAPORT DO SUPABASE
       const newHistory = {
-        form_id: Number(report.formId),
+        id: Date.now(),
+        formId: Number(report.formId),
         shift: report.shift,
         operator: report.operator.trim(),
         date: report.date || new Date().toISOString().split('T')[0],
@@ -526,71 +461,23 @@ export default function Dashboard() {
         notes: report.notes || ''
       };
 
-      const { data: historyData, error: historyError } = await supabase
-        .from(TABLES.HISTORY)
-        .insert([newHistory])
-        .select();
+      setHistory(prev => [newHistory, ...prev]);
 
-      if (historyError) {
-        console.error('Błąd zapisu historii:', historyError);
-        notify(`❌ Nie udało się zapisać raportu: ${historyError.message}`, 'error');
-        return;
-      }
-
-      // 2. AKTUALIZUJ FORMĘ
       if (form) {
         const newCycles = (form.cycles || 0) + (Number(report.produced) || 0);
-        
-        const updatedValues = {
+        setForms(prev => prev.map(f => f.id === form.id ? {
+          ...f,
           status: report.status,
           cycles: newCycles,
-          notes: report.notes || form.notes
-        };
-
-        const { data: updatedForm, error: formError } = await supabase
-          .from(TABLES.FORMS)
-          .update(updatedValues)
-          .eq('id', form.id)
-          .select()
-          .single();
-
-        if (formError) {
-          console.error('Błąd aktualizacji formy:', formError);
-          notify(`⚠️ Raport zapisany, ale błąd aktualizacji formy: ${formError.message}`, 'error');
-          return;
-        }
-
-        setForms(prev =>
-          prev.map(f =>
-            f.id === form.id
-              ? {
-                  ...updatedForm,
-                  cycles: Number(updatedForm.cycles) || 0,
-                  cyclesLimit: Number(updatedForm.cyclesLimit) || 5000
-                }
-              : f
-          )
-        );
+          notes: report.notes || f.notes
+        } : f));
       }
 
-      // 3. AKTUALIZUJ HISTORIĘ W STANIE
-      if (historyData && historyData[0]) {
-        setHistory(prev => [{
-          ...historyData[0],
-          formId: historyData[0].form_id
-        }, ...prev]);
-      }
-
-      notify('✅ Raport zapisany pomyślnie!');
+      notify('✅ Raport zapisany pomyślnie! (lokalnie)');
       setReport(emptyReport());
       setActiveTab('dashboard');
-
-    } catch (error) {
-      console.error('Błąd:', error);
-      notify('❌ Wystąpił błąd podczas zapisu raportu', 'error');
-    } finally {
       setLoading(false);
-    }
+    }, 300);
   };
 
   // ============================================
@@ -603,14 +490,6 @@ export default function Dashboard() {
     if (s === 'Uszkodzona') return 'status-repair';
     if (s === 'Serwis') return 'status-service';
     return 'status-ok';
-  };
-
-  const getStatusIcon = (s) => {
-    if (s === 'Dostępna') return <FaCheckCircle className="text-emerald-400" />;
-    if (s === 'W produkcji') return <FaTools className="text-amber-400" />;
-    if (s === 'Uszkodzona') return <FaExclamationTriangle className="text-rose-400" />;
-    if (s === 'Serwis') return <FaWrench className="text-gray-400" />;
-    return <FaInfoCircle />;
   };
 
   const navItems = [
