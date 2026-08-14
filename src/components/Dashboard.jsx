@@ -1,4 +1,3 @@
-import { supabase } from '../supabase';
 import React, { useMemo, useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -17,11 +16,6 @@ import { defaultUsers, getVisibleTabs, ROLES, PERMISSIONS, ensureServicePermissi
 import UsersPanel from './UsersPanel';
 import ServicePanel from './ServicePanel';
 import ReportsPanel from './ReportsPanel';
-
-// ============================================
-// NAZWA TABELI - SPRAWDŹ CZY TO TWOJA NAZWA!
-// ============================================
-const TABLE_NAME = 'forms';  // ← ZMIEŃ NA SWOJĄ NAZWĘ JAK MASZ INNĄ!
 
 // ============================================
 // DANE POCZĄTKOWE
@@ -67,12 +61,10 @@ const emptyReport = () => ({
 });
 
 // ============================================
-// FUNKCJE ZAPISU I ODCZYTU Z localStorage
+// FUNKCJE ZAPISU I ODCZYTU Z localStorage (TYLKO DLA UŻYTKOWNIKÓW)
 // ============================================
 
 const STORAGE_KEYS = {
-  FORMS: 'forma_odlewcze_forms',
-  HISTORY: 'forma_odlewcze_history',
   USERS: 'forma_odlewcze_users',
   TASKS: 'forma_odlewcze_tasks'
 };
@@ -105,7 +97,7 @@ export default function Dashboard() {
   const navigate = useNavigate();
   
   const [forms, setForms] = useState([]);
-  const [history, setHistory] = useState(() => loadFromStorage(STORAGE_KEYS.HISTORY, defaultHistory));
+  const [history, setHistory] = useState(defaultHistory);
   const [tasks, setTasks] = useState(() => loadFromStorage(STORAGE_KEYS.TASKS, []));
   
   const [users, setUsers] = useState(() => {
@@ -144,55 +136,48 @@ export default function Dashboard() {
       console.log('🔄 Pobieranie form z Supabase...');
       
       const { data, error } = await supabase
-        .from(TABLE_NAME)
+        .from('forms')
         .select('*')
         .order('id', { ascending: false });
 
       if (error) {
-        console.error('❌ Błąd pobierania form:', error);
-        notify(`❌ Błąd bazy danych: ${error.message}`, 'error');
+        console.error('❌ Błąd pobierania:', error);
+        notify(`❌ ${error.message}`, 'error');
         return;
       }
 
       console.log('✅ Dane pobrane:', data);
 
       if (data && data.length > 0) {
-        const normalizedForms = data.map(form => ({
+        const normalized = data.map(form => ({
           ...form,
           cycles: Number(form.cycles) || 0,
           cyclesLimit: Number(form.cyclesLimit) || 5000
         }));
-        setForms(normalizedForms);
-        notify(`✅ Załadowano ${normalizedForms.length} form z bazy`, 'success');
+        setForms(normalized);
+        console.log('✅ Załadowano', normalized.length, 'form');
       } else {
-        console.log('⚠️ Brak danych w bazie - wgrywam domyślne...');
+        console.log('⚠️ Brak danych - wgrywam domyślne...');
         await seedDefaultForms();
       }
     } catch (error) {
       console.error('❌ Błąd:', error);
-      notify('❌ Nie udało się połączyć z bazą danych', 'error');
+      notify('❌ Nie udało się połączyć z bazą', 'error');
     } finally {
       setLoading(false);
     }
   };
 
-  // ============================================
-  // WGRAJ DOMYŚLNE DANE DO SUPABASE
-  // ============================================
-
   const seedDefaultForms = async () => {
     try {
-      setLoading(true);
-      console.log('🔄 Wgrywanie domyślnych form do Supabase...');
-      
       const formsToInsert = defaultForms.map(f => ({
         name: f.name,
         status: f.status,
         material: f.material,
         location: f.location,
         machine: f.machine,
-        cycles: f.cycles,
-        cyclesLimit: f.cyclesLimit,
+        cycles: String(f.cycles),
+        cyclesLimit: String(f.cyclesLimit),
         lastMaintenance: f.lastMaintenance,
         nextMaintenance: f.nextMaintenance,
         temperature: f.temperature,
@@ -202,31 +187,27 @@ export default function Dashboard() {
       }));
 
       const { data, error } = await supabase
-        .from(TABLE_NAME)
+        .from('forms')
         .insert(formsToInsert)
         .select();
 
       if (error) {
         console.error('❌ Błąd seedowania:', error);
-        notify(`❌ Błąd wgrywania danych: ${error.message}`, 'error');
         return;
       }
 
       if (data) {
-        console.log('✅ Wgrano domyślne dane:', data);
         const normalized = data.map(form => ({
           ...form,
           cycles: Number(form.cycles) || 0,
           cyclesLimit: Number(form.cyclesLimit) || 5000
         }));
         setForms(normalized);
-        notify(`✅ Wgrano ${normalized.length} domyślnych form do bazy`, 'success');
+        console.log('✅ Wgrano domyślne dane');
+        notify('✅ Wgrano domyślne formy');
       }
     } catch (error) {
-      console.error('❌ Błąd seedowania:', error);
-      notify('❌ Nie udało się wgrać danych', 'error');
-    } finally {
-      setLoading(false);
+      console.error('❌ Błąd:', error);
     }
   };
 
@@ -234,37 +215,13 @@ export default function Dashboard() {
   // ŁADOWANIE PRZY STARCIE
   // ============================================
 
- useEffect(() => {
-  loadFormsFromSupabase();
-}, []);
-
-const loadFormsFromSupabase = async () => {
-  try {
-    const { data, error } = await supabase
-      .from('forms')
-      .select('*')
-      .order('id', { ascending: false });
-
-    if (error) {
-      console.error('Błąd:', error);
-      return;
-    }
-
-    if (data) {
-      setForms(data);
-    }
-  } catch (error) {
-    console.error('Błąd:', error);
-  }
-};
-
-  // ============================================
-  // ZAPISYWANIE DO localStorage (tylko dla innych danych)
-  // ============================================
-
   useEffect(() => {
-    saveToStorage(STORAGE_KEYS.HISTORY, history);
-  }, [history]);
+    loadFormsFromSupabase();
+  }, []);
+
+  // ============================================
+  // ZAPISYWANIE DO localStorage (tylko dla użytkowników)
+  // ============================================
 
   useEffect(() => {
     saveToStorage(STORAGE_KEYS.USERS, users);
@@ -353,19 +310,20 @@ const loadFormsFromSupabase = async () => {
         status: newForm.status || 'Dostępna',
         material: newForm.material || '',
         location: newForm.location || '',
-        cycles: Number(newForm.cycles) || 0,
-        cyclesLimit: Number(newForm.cyclesLimit) || 5000,
+        cycles: String(Number(newForm.cycles) || 0),
+        cyclesLimit: String(Number(newForm.cyclesLimit) || 5000),
         lastMaintenance: last,
         nextMaintenance: next.toISOString().split('T')[0],
         machine: newForm.machine || '',
         temperature: newForm.temperature || '',
         pressure: newForm.pressure || '',
-        notes: newForm.notes || ''
+        notes: newForm.notes || '',
+        created: new Date().toISOString().split('T')[0]
       };
 
       if (editingId) {
         const { data, error } = await supabase
-          .from(TABLE_NAME)
+          .from('forms')
           .update(formData)
           .eq('id', editingId)
           .select()
@@ -392,7 +350,7 @@ const loadFormsFromSupabase = async () => {
         notify('✅ Forma zaktualizowana');
       } else {
         const { data, error } = await supabase
-          .from(TABLE_NAME)
+          .from('forms')
           .insert([formData])
           .select()
           .single();
@@ -436,7 +394,7 @@ const loadFormsFromSupabase = async () => {
 
     try {
       const { error } = await supabase
-        .from(TABLE_NAME)
+        .from('forms')
         .delete()
         .eq('id', id);
 
@@ -458,7 +416,7 @@ const loadFormsFromSupabase = async () => {
   };
 
   // ============================================
-  // RAPORT ZMIANOWY (ZAPIS DO LOCALSTORAGE - NA RAZIE)
+  // RAPORT ZMIANOWY (TYMCZASOWO - LOCALSTORAGE)
   // ============================================
 
   const saveReport = (e) => {
