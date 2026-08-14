@@ -234,9 +234,29 @@ export default function Dashboard() {
   // ŁADOWANIE PRZY STARCIE
   // ============================================
 
-  useEffect(() => {
-    loadFormsFromSupabase();
-  }, []);
+ useEffect(() => {
+  loadFormsFromSupabase();
+}, []);
+
+const loadFormsFromSupabase = async () => {
+  try {
+    const { data, error } = await supabase
+      .from('forms')
+      .select('*')
+      .order('id', { ascending: false });
+
+    if (error) {
+      console.error('Błąd:', error);
+      return;
+    }
+
+    if (data) {
+      setForms(data);
+    }
+  } catch (error) {
+    console.error('Błąd:', error);
+  }
+};
 
   // ============================================
   // ZAPISYWANIE DO localStorage (tylko dla innych danych)
