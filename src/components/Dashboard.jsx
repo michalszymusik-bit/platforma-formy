@@ -18,7 +18,15 @@ import ServicePanel from './ServicePanel';
 import ReportsPanel from './ReportsPanel';
 
 // ============================================
-// BAZA DANYCH - FORMY I HISTORIA
+// NAZWY TABEL - ZMIEŃ NA SWOJE!
+// ============================================
+const TABLES = {
+  FORMS: 'forms',      // ← PODAJ NAZWĘ TABELI Z FORMANI
+  HISTORY: 'history'   // ← PODAJ NAZWĘ TABELI Z HISTORIĄ
+};
+
+// ============================================
+// BAZA DANYCH - DANE POCZĄTKOWE (TYLKO GDY PUSTO)
 // ============================================
 
 const defaultForms = [
@@ -61,12 +69,10 @@ const emptyReport = () => ({
 });
 
 // ============================================
-// FUNKCJE ZAPISU I ODCZYTU Z localStorage
+// FUNKCJE ZAPISU I ODCZYTU Z localStorage (TYLKO DLA UŻYTKOWNIKÓW I ZADAŃ)
 // ============================================
 
 const STORAGE_KEYS = {
-  FORMS: 'forma_odlewcze_forms',
-  HISTORY: 'forma_odlewcze_history',
   USERS: 'forma_odlewcze_users',
   TASKS: 'forma_odlewcze_tasks'
 };
@@ -99,10 +105,10 @@ export default function Dashboard() {
   const navigate = useNavigate();
   
   const [forms, setForms] = useState([]);
-  const [history, setHistory] = useState(() => loadFromStorage(STORAGE_KEYS.HISTORY, defaultHistory));
+  const [history, setHistory] = useState([]);
   const [tasks, setTasks] = useState(() => loadFromStorage(STORAGE_KEYS.TASKS, []));
   
-  // ⭐ ŁADUJEMY UŻYTKOWNIKÓW I AKTUALIZUJEMY UPRAWNIENIA
+  // ⭐ ŁADUJEMY UŻYTKOWNIKÓW
   const [users, setUsers] = useState(() => {
     const loadedUsers = loadFromStorage(STORAGE_KEYS.USERS, defaultUsers);
     return ensureServicePermission(loadedUsers);
@@ -118,40 +124,6 @@ export default function Dashboard() {
   const [report, setReport] = useState(emptyReport());
   const [toast, setToast] = useState(null);
   const [loading, setLoading] = useState(false);
-  useEffect(() => {
-  loadFormsFromSupabase();
-}, []);
-
-const loadFormsFromSupabase = async () => {
-  try {
-    setLoading(true);
-
-    const { data, error } = await supabase
-      .from('forms')
-      .select('*')
-      .order('id', { ascending: false });
-
-    if (error) {
-      console.error('Błąd pobierania form:', error);
-      notify(`❌ Błąd bazy danych: ${error.message}`, 'error');
-      return;
-    }
-
-    const normalizedForms = (data || []).map(form => ({
-      ...form,
-      cycles: Number(form.cycles) || 0,
-      cyclesLimit: Number(form.cyclesLimit) || 5000
-    }));
-
-    setForms(normalizedForms);
-
-  } catch (error) {
-    console.error(error);
-    notify('❌ Nie udało się połączyć z bazą danych', 'error');
-  } finally {
-    setLoading(false);
-  }
-};
 
   // ⭐ Pobieramy dane użytkownika z localStorage
   const username = localStorage.getItem('username') || 'Administrator';
@@ -165,17 +137,166 @@ const loadFormsFromSupabase = async () => {
   // ⭐ Użyj funkcji getVisibleTabs z uwzględnieniem customPermissions
   const visibleTabs = getVisibleTabs(currentUser || { role: userRole, customPermissions: PERMISSIONS[userRole] });
   
-  // ⭐ SPRAWDŹ CZY ADMIN - użyj zarówno roli z localStorage jak i z users
+  // ⭐ SPRAWDŹ CZY ADMIN
   const isAdmin = userRole === ROLES.ADMIN || currentUser?.role === ROLES.ADMIN;
 
   // ============================================
-  // ZAPISYWANIE DANYCH
+  // FUNKCJE SUPABASE - FORMY
   // ============================================
 
+  const loadFormsFromSupabase = async () => {
+    try {
+      setLoading(true);
+      const { data, error } = await supabase
+        .from(TABLES.FORMS)
+        .select('*')
+        .order('id', { ascending: false });
+
+      if (error) {
+        console.error('Błąd pobierania form:', error);
+        notify(`❌ Błąd bazy danych: ${error.message}`, 'error');
+        return;
+      }
+
+      if (data && data.length > 0) {
+        const normalizedForms = data.map(form => ({
+          ...form,
+          cycles: Number(form.cycles) || 0,
+          cyclesLimit: Number(form.cyclesLimit) || 5000
+        }));
+        setForms(normalizedForms);
+      } else {
+        // Jeśli brak danych - wgraj domyślne
+        await seedDefaultForms();
+      }
+    } catch (error) {
+      console.error(error);
+      notify('❌ Nie udało się połączyć z bazą danych', 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const seedDefaultForms = async () => {
+    try {
+      const formsToInsert = defaultForms.map(f => ({
+        name: f.name,
+        status: f.status,
+        material: f.material,
+        location: f.location,
+        machine: f.machine,
+        cycles: f.cycles,
+        cyclesLimit: f.cyclesLimit,
+        lastMaintenance: f.lastMaintenance,
+        nextMaintenance: f.nextMaintenance,
+        temperature: f.temperature,
+        pressure: f.pressure,
+        notes: f.notes,
+        created: f.created
+      }));
+
+      const { data, error } = await supabase
+        .from(TABLES.FORMS)
+        .insert(formsToInsert)
+        .select();
+
+      if (error) {
+        console.error('Błąd seedowania:', error);
+        return;
+      }
+
+      if (data) {
+        const normalized = data.map(form => ({
+          ...form,
+          cycles: Number(form.cycles) || 0,
+          cyclesLimit: Number(form.cyclesLimit) || 5000
+        }));
+        setForms(normalized);
+        notify('✅ Załadowano domyślne dane form', 'success');
+      }
+    } catch (error) {
+      console.error('Błąd seedowania:', error);
+    }
+  };
+
+  // ============================================
+  // FUNKCJE SUPABASE - HISTORIA
+  // ============================================
+
+  const loadHistoryFromSupabase = async () => {
+    try {
+      const { data, error } = await supabase
+        .from(TABLES.HISTORY)
+        .select('*')
+        .order('date', { ascending: false });
+
+      if (error) {
+        console.error('Błąd pobierania historii:', error);
+        return;
+      }
+
+      if (data && data.length > 0) {
+        const normalizedHistory = data.map(h => ({
+          ...h,
+          formId: h.form_id || h.formId
+        }));
+        setHistory(normalizedHistory);
+      } else {
+        // Jeśli brak historii - wgraj domyślne
+        await seedDefaultHistory();
+      }
+    } catch (error) {
+      console.error('Błąd:', error);
+    }
+  };
+
+  const seedDefaultHistory = async () => {
+    try {
+      const historyToInsert = defaultHistory.map(h => ({
+        form_id: h.formId,
+        shift: h.shift,
+        operator: h.operator,
+        date: h.date,
+        produced: h.produced,
+        problems: h.problems,
+        status: h.status,
+        notes: h.notes
+      }));
+
+      const { data, error } = await supabase
+        .from(TABLES.HISTORY)
+        .insert(historyToInsert)
+        .select();
+
+      if (error) {
+        console.error('Błąd seedowania historii:', error);
+        return;
+      }
+
+      if (data) {
+        const normalized = data.map(h => ({
+          ...h,
+          formId: h.form_id
+        }));
+        setHistory(normalized);
+      }
+    } catch (error) {
+      console.error('Błąd seedowania historii:', error);
+    }
+  };
+
+  // ============================================
+  // ŁADOWANIE DANYCH PRZY STARCIE
+  // ============================================
 
   useEffect(() => {
-    saveToStorage(STORAGE_KEYS.HISTORY, history);
-  }, [history]);
+    loadFormsFromSupabase();
+    loadHistoryFromSupabase();
+  }, []);
+
+  // ============================================
+  // ZAPISYWANIE DANYCH DO localStorage (TYLKO UŻYTKOWNICY I ZADANIA)
+  // ============================================
 
   useEffect(() => {
     saveToStorage(STORAGE_KEYS.USERS, users);
@@ -238,167 +359,164 @@ const loadFormsFromSupabase = async () => {
   };
 
   // ============================================
-  // CRUD - FORMY
+  // CRUD - FORMY (Z SUPABASE)
   // ============================================
 
   const openNew = () => { setEditingId(null); setNewForm(emptyForm()); setModal('form'); };
   const openEdit = (form) => { setEditingId(form.id); setNewForm({ ...form }); setModal('form'); };
 
   const saveForm = async (e) => {
-  e.preventDefault();
+    e.preventDefault();
 
-  if (!newForm.name.trim()) {
-    notify('Nazwa formy jest wymagana', 'error');
-    return;
-  }
-
-  setLoading(true);
-
-  try {
-    const last =
-      newForm.lastMaintenance ||
-      new Date().toISOString().split('T')[0];
-
-    const next = new Date(last);
-    next.setMonth(next.getMonth() + 3);
-
-    /*
-     * WAŻNE:
-     * wysyłamy tylko kolumny, które masz w Supabase.
-     *
-     * cyclesLimit i lastServiceDate nie są w Twojej
-     * tabeli, dlatego nie wysyłamy ich do bazy.
-     */
-    const formData = {
-      name: newForm.name.trim().toUpperCase(),
-      status: newForm.status || 'Dostępna',
-      material: newForm.material || '',
-      location: newForm.location || '',
-      cycles: Number(newForm.cycles) || 0,
-      lastMaintenance: last,
-      nextMaintenance: next.toISOString().split('T')[0],
-      machine: newForm.machine || '',
-      temperature: newForm.temperature || '',
-      pressure: newForm.pressure || '',
-      notes: newForm.notes || ''
-    };
-
-    if (editingId) {
-
-      const { data, error } = await supabase
-        .from('forms')
-        .update(formData)
-        .eq('id', editingId)
-        .select()
-        .single();
-
-      if (error) {
-        console.error('Błąd aktualizacji:', error);
-        notify(`❌ ${error.message}`, 'error');
-        return;
-      }
-
-      setForms(prev =>
-        prev.map(form =>
-          form.id === editingId
-            ? {
-                ...data,
-                cycles: Number(data.cycles) || 0,
-                cyclesLimit: Number(data.cyclesLimit) || 5000
-              }
-            : form
-        )
-      );
-
-      notify('✅ Forma zaktualizowana');
-
-    } else {
-
-      const { data, error } = await supabase
-        .from('forms')
-        .insert([formData])
-        .select()
-        .single();
-
-      if (error) {
-        console.error('Błąd dodawania:', error);
-        notify(`❌ ${error.message}`, 'error');
-        return;
-      }
-
-      const newItem = {
-        ...data,
-        cycles: Number(data.cycles) || 0,
-        cyclesLimit: Number(data.cyclesLimit) || 5000
-      };
-
-      setForms(prev => [newItem, ...prev]);
-
-      notify(`✅ Dodano ${newItem.name}`);
-    }
-
-    setModal(null);
-    setEditingId(null);
-    setNewForm(emptyForm());
-
-  } catch (error) {
-    console.error(error);
-    notify('❌ Wystąpił błąd podczas zapisu', 'error');
-  } finally {
-    setLoading(false);
-  }
-};
-  const removeForm = async (id) => {
-  const f = forms.find(x => x.id === id);
-
-  if (!f) return;
-
-  if (!window.confirm(`⚠️ Usunąć ${f.name}?`)) {
-    return;
-  }
-
-  setLoading(true);
-
-  try {
-    const { error } = await supabase
-      .from('forms')
-      .delete()
-      .eq('id', id);
-
-    if (error) {
-      console.error('Błąd usuwania:', error);
-      notify(`❌ ${error.message}`, 'error');
+    if (!newForm.name.trim()) {
+      notify('Nazwa formy jest wymagana', 'error');
       return;
     }
 
-    setForms(prev => prev.filter(x => x.id !== id));
-    setModal(null);
+    setLoading(true);
 
-    notify(`🗑️ Usunięto ${f.name}`, 'warning');
+    try {
+      const last = newForm.lastMaintenance || new Date().toISOString().split('T')[0];
+      const next = new Date(last);
+      next.setMonth(next.getMonth() + 3);
 
-  } catch (error) {
-    console.error(error);
-    notify('❌ Nie udało się usunąć formy', 'error');
-  } finally {
-    setLoading(false);
-  }
-};
-  // ============================================
-  // RAPORT ZMIANOWY
-  // ============================================
+      const formData = {
+        name: newForm.name.trim().toUpperCase(),
+        status: newForm.status || 'Dostępna',
+        material: newForm.material || '',
+        location: newForm.location || '',
+        cycles: Number(newForm.cycles) || 0,
+        cyclesLimit: Number(newForm.cyclesLimit) || 5000,
+        lastMaintenance: last,
+        nextMaintenance: next.toISOString().split('T')[0],
+        machine: newForm.machine || '',
+        temperature: newForm.temperature || '',
+        pressure: newForm.pressure || '',
+        notes: newForm.notes || ''
+      };
 
-  const saveReport = (e) => {
-    e.preventDefault();
-    if (!report.formId) { notify('❌ Wybierz formę', 'error'); return; }
-    if (!report.operator.trim()) { notify('❌ Wpisz nazwisko operatora', 'error'); return; }
-    if (report.produced < 0) { notify('❌ Produkcja nie może być ujemna', 'error'); return; }
+      if (editingId) {
+        const { data, error } = await supabase
+          .from(TABLES.FORMS)
+          .update(formData)
+          .eq('id', editingId)
+          .select()
+          .single();
+
+        if (error) {
+          console.error('Błąd aktualizacji:', error);
+          notify(`❌ ${error.message}`, 'error');
+          return;
+        }
+
+        setForms(prev =>
+          prev.map(form =>
+            form.id === editingId
+              ? {
+                  ...data,
+                  cycles: Number(data.cycles) || 0,
+                  cyclesLimit: Number(data.cyclesLimit) || 5000
+                }
+              : form
+          )
+        );
+
+        notify('✅ Forma zaktualizowana');
+      } else {
+        const { data, error } = await supabase
+          .from(TABLES.FORMS)
+          .insert([formData])
+          .select()
+          .single();
+
+        if (error) {
+          console.error('Błąd dodawania:', error);
+          notify(`❌ ${error.message}`, 'error');
+          return;
+        }
+
+        const newItem = {
+          ...data,
+          cycles: Number(data.cycles) || 0,
+          cyclesLimit: Number(data.cyclesLimit) || 5000
+        };
+
+        setForms(prev => [newItem, ...prev]);
+        notify(`✅ Dodano ${newItem.name}`);
+      }
+
+      setModal(null);
+      setEditingId(null);
+      setNewForm(emptyForm());
+    } catch (error) {
+      console.error(error);
+      notify('❌ Wystąpił błąd podczas zapisu', 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const removeForm = async (id) => {
+    const f = forms.find(x => x.id === id);
+    if (!f) return;
+
+    if (!window.confirm(`⚠️ Usunąć ${f.name}?`)) {
+      return;
+    }
 
     setLoading(true);
-    setTimeout(() => {
+
+    try {
+      const { error } = await supabase
+        .from(TABLES.FORMS)
+        .delete()
+        .eq('id', id);
+
+      if (error) {
+        console.error('Błąd usuwania:', error);
+        notify(`❌ ${error.message}`, 'error');
+        return;
+      }
+
+      setForms(prev => prev.filter(x => x.id !== id));
+      setModal(null);
+      notify(`🗑️ Usunięto ${f.name}`, 'warning');
+    } catch (error) {
+      console.error(error);
+      notify('❌ Nie udało się usunąć formy', 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ============================================
+  // RAPORT ZMIANOWY (Z SUPABASE)
+  // ============================================
+
+  const saveReport = async (e) => {
+    e.preventDefault();
+    
+    if (!report.formId) { 
+      notify('❌ Wybierz formę', 'error'); 
+      return; 
+    }
+    if (!report.operator.trim()) { 
+      notify('❌ Wpisz nazwisko operatora', 'error'); 
+      return; 
+    }
+    if (report.produced < 0) { 
+      notify('❌ Produkcja nie może być ujemna', 'error'); 
+      return; 
+    }
+
+    setLoading(true);
+
+    try {
       const form = forms.find(f => f.id === Number(report.formId));
+      
+      // 1. ZAPISZ RAPORT DO SUPABASE
       const newHistory = {
-        id: Date.now(),
-        formId: Number(report.formId),
+        form_id: Number(report.formId),
         shift: report.shift,
         operator: report.operator.trim(),
         date: report.date || new Date().toISOString().split('T')[0],
@@ -408,44 +526,73 @@ const loadFormsFromSupabase = async () => {
         notes: report.notes || ''
       };
 
-      setHistory(prev => [newHistory, ...prev]);
+      const { data: historyData, error: historyError } = await supabase
+        .from(TABLES.HISTORY)
+        .insert([newHistory])
+        .select();
 
+      if (historyError) {
+        console.error('Błąd zapisu historii:', historyError);
+        notify(`❌ Nie udało się zapisać raportu: ${historyError.message}`, 'error');
+        return;
+      }
+
+      // 2. AKTUALIZUJ FORMĘ
       if (form) {
-        const newStatus = report.status;
         const newCycles = (form.cycles || 0) + (Number(report.produced) || 0);
-        setForms(prev => prev.map(f => f.id === form.id ? {
-          ...f,
-          
-const updatedValues = {
-  status: newStatus,
-  cycles: newCycles,
-  notes: report.notes || form.notes
-};
+        
+        const updatedValues = {
+          status: report.status,
+          cycles: newCycles,
+          notes: report.notes || form.notes
+        };
 
-const { data: updatedForm, error } = await supabase
-  .from('forms')
-  .update(updatedValues)
-  .eq('id', form.id)
-  .select()
-  .single();
+        const { data: updatedForm, error: formError } = await supabase
+          .from(TABLES.FORMS)
+          .update(updatedValues)
+          .eq('id', form.id)
+          .select()
+          .single();
 
-if (error) {
-  console.error('Błąd aktualizacji formy:', error);
-  notify(`❌ Raport zapisany, ale nie udało się zaktualizować formy: ${error.message}`, 'error');
-  return;
-}
-
-setForms(prev =>
-  prev.map(f =>
-    f.id === form.id
-      ? {
-          ...updatedForm,
-          cycles: Number(updatedForm.cycles) || 0,
-          cyclesLimit: Number(updatedForm.cyclesLimit) || 5000
+        if (formError) {
+          console.error('Błąd aktualizacji formy:', formError);
+          notify(`⚠️ Raport zapisany, ale błąd aktualizacji formy: ${formError.message}`, 'error');
+          return;
         }
-      : f
-  )
-);
+
+        setForms(prev =>
+          prev.map(f =>
+            f.id === form.id
+              ? {
+                  ...updatedForm,
+                  cycles: Number(updatedForm.cycles) || 0,
+                  cyclesLimit: Number(updatedForm.cyclesLimit) || 5000
+                }
+              : f
+          )
+        );
+      }
+
+      // 3. AKTUALIZUJ HISTORIĘ W STANIE
+      if (historyData && historyData[0]) {
+        setHistory(prev => [{
+          ...historyData[0],
+          formId: historyData[0].form_id
+        }, ...prev]);
+      }
+
+      notify('✅ Raport zapisany pomyślnie!');
+      setReport(emptyReport());
+      setActiveTab('dashboard');
+
+    } catch (error) {
+      console.error('Błąd:', error);
+      notify('❌ Wystąpił błąd podczas zapisu raportu', 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // ============================================
   // POMOCNICZE
   // ============================================
